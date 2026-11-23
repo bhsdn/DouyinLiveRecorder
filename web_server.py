@@ -13,6 +13,12 @@ import sys
 
 os.environ.setdefault('DLR_SKIP_AUTO_INSTALL', '1')
 
+# pythonw / Windows services have no console streams, but src/logger.py registers sys.stderr as a sink.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w', encoding='utf-8')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w', encoding='utf-8')
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='DouyinLiveRecorder Web 管理端')
