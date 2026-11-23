@@ -301,7 +301,7 @@ https://www.picarto.tv/cuteavalanche
 - 桌面端：直播间增删改/批量导入/暂停/立即检测/停止本场录制、设置页（含推送测试和 Cookie）、录制文件管理、实时日志、系统托盘与开播/录完通知。
 - Web 端：功能与桌面端相同，额外支持浏览器内预览直播源。默认只监听本机；在 `config.ini` 的 `[Web]` 段把监听地址改为 `0.0.0.0` 时必须设置访问密码，也可用 `--host/--port/--password` 或环境变量 `DLR_WEB_HOST/DLR_WEB_PORT/DLR_WEB_PASSWORD` 覆盖。
 - Docker：设置环境变量 `MODE=web` 和 `DLR_WEB_PASSWORD` 并映射 `8686` 端口即可使用 Web 管理端，见 `docker-compose.yaml` 中的注释。
-- 打包桌面端：`pip install pyinstaller` 后执行 `python packaging/build_desktop.py`，产物在 `dist/DouyinLiveRecorderGUI/`。
+- 打包：`pip install pyinstaller` 后执行 `python packaging/build_all.py --with-ffmpeg`，命令行、桌面端、Web 端三个 exe 会打包到同一个文件夹 `dist/DouyinLiveRecorder/`；只要桌面端时用 `python packaging/build_desktop.py`。
 - 开发：`pip install pytest ruff` 后执行 `pytest` 和 `ruff check recorder_core gui_desktop web tests`。首次运行时如果没有 `config/config.ini`，会从 `config/config.ini.example` 自动生成。
 
 &emsp;
