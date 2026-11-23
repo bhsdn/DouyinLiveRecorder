@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="never">
+    <title>DouyinLiveRecorder 管理端</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="vendor/vue.global.prod.js"></script>
+    <script src="vendor/hls.min.js"></script>
+    <script src="vendor/flv.min.js"></script>
+</head>
+<body>
+<div id="app" v-cloak>
+    <!-- ======================================================== login -->
+    <div v-if="needLogin" class="login">
+        <form class="login-box" @submit.prevent="login">
+            <h2>DouyinLiveRecorder</h2>
+            <p class="hint">请输入访问密码</p>
+            <input type="password" v-model="password" placeholder="访问密码" autofocus>
+            <button class="primary" type="submit">登录</button>
+            <p class="error" v-if="loginError">{{ loginError }}</p>
+        </form>
+    </div>
+
+    <div v-else class="layout">
+        <!-- ==================================================== sidebar -->
+        <nav class="sidebar">
+            <div class="brand"><span class="dot"></span>直播录制</div>
+            <a v-for="p in pages" :key="p.key" :class="{active: page === p.key}" @click="page = p.key">{{ p.label }}</a>
+            <div class="sidebar-foot">
+                <div>监测 {{ monitoringCount }}/{{ rooms.length }}</div>
+                <div>录制中 <b class="rec">{{ recordingCount }}</b></div>
+                <div :class="wsOnline ? 'ok' : 'warn'">{{ wsOnline ? '实时连接正常' : '连接中断，重连中…' }}</div>
+                <a v-if="auth.required" class="logout" @click="logout">退出登录</a>
+            </div>
+        </nav>
+
+        <main class="content">
+            <!-- ================================================= rooms -->
+            <section v-show="page === 'rooms'">
+                <h1>直播间</h1>
+                <div class="toolbar">
+                    <button class="primary" @click="openRoomDialog()">添加</button>
+                    <button @click="importDialog.show = true">批量导入</button>
+                    <span class="sep"></span>
+                    <button @click="bulk('pause_all')">全部暂停</button>
+                    <button @click="bulk('resume_all')">全部恢复</button>
+                    <span class="grow"></span>
+                    <input class="search" v-model="roomSearch" placeholder="搜索主播 / 平台 / 地址 / 标题">
+                    <select v-model="roomFilter">
+                        <option v-for="f in stateFilters" :value="f.key">{{ f.label }}</option>
+                    </select>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>序号</th><th>主播</th><th>平台</th><th>画质</th><th>状态</th><th>已录时长</th>
+                            <th>下次检测</th><th>直播标题</th><th>备注</th><th class="actions">操作</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <tr v-for="r in filteredRooms" :key="r.id" :class="{disabled: !r.enabled}">
+                            <td class="center">{{ r.index }}</td>
+                            <td><a :href="r.url" target="_blank" rel="noreferrer" :title="r.url">{{ r.name || '(待获取)' }}</a></td>
+                            <td>{{ r.platform }}</td>
+                            <td class="center">{{ r.quality }}</td>
+                            <td><span class="badge" :class="'s-' + r.state">{{ r.state_label }}</span></td>
+                            <td class="mono">{{ duration(r) }}</td>
+                            <td>{{ nextCheck(r) }}</td>
+                            <td class="ellipsis" :title="r.title">{{ r.title }}</td>
+                            <td class="ellipsis hint" :title="r.last_error">{{ r.last_error }}</td>
+                            <td class="actions">
+                                <button v-if="r.enabled" @click="roomAction(r, 'pause')">暂停</button>
+                                <button v-else @click="roomAction(r, 'resume')">恢复</button>
+                                <button :disabled="!r.enabled" @click="roomAction(r, 'check')">检测</button>
+                                <button v-if="r.state === 'recording'" @click="roomAction(r, 'stop')" title="停止当前录制并跳过本场">停止本场</button>
+                                <button v-if="r.stream_url" @click="openPreview(r)">预览</button>
+                                <button @click="openRoomDialog(r)">编辑</button>
+                                <button class="danger" @click="deleteRoom(r)">删除</button>
+                            </td>
+                        </tr>
+                        <tr v-if="!filteredRooms.length"><td colspan="10" class="empty">暂无直播间，点击"添加"开始</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ================================================= files -->
+            <section v-show="page === 'files'">
+                <h1>录制文件</h1>
+                <div class="toolbar">
+                    <button @click="loadFiles">刷新</button>
+                    <span class="hint">录制目录：{{ system.save_root }}</span>
+                    <span class="grow"></span>
+                    <input class="search" v-model="fileSearch" placeholder="搜索文件名或目录">
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>文件名</th><th>目录</th><th>大小</th><th>修改时间</th><th class="actions">操作</th></tr></thead>
+                        <tbody>
+                        <tr v-for="f in filteredFiles" :key="f.relative">
+                            <td class="ellipsis" :title="f.name">{{ f.name }}</td>
+                            <td class="ellipsis hint">{{ dirname(f.relative) }}</td>
+                            <td class="mono right">{{ size(f.size) }}</td>
+                            <td class="mono">{{ datetime(f.mtime) }}</td>
+                            <td class="actions">
+                                <a class="btn" :href="downloadUrl(f)">下载</a>
+                                <button v-if="/\.(ts|flv|mkv)$/i.test(f.name)" @click="convertFile(f)">转 MP4</button>
+                                <button class="danger" @click="deleteFile(f)">删除</button>
+                            </td>
+                        </tr>
+                        <tr v-if="!filteredFiles.length"><td colspan="5" class="empty">暂无录制文件</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ================================================= logs -->
+            <section v-show="page === 'logs'">
+                <h1>运行日志</h1>
+                <div class="toolbar">
+                    <select v-model.number="logLevel">
+                        <option :value="1">信息及以上</option>
+                        <option :value="0">全部（含检测过程）</option>
+                        <option :value="2">警告及以上</option>
+                        <option :value="3">仅错误</option>
+                    </select>
+                    <label><input type="checkbox" v-model="logFollow"> 自动滚动</label>
+                    <span class="grow"></span>
+                    <button @click="logs = []">清空</button>
+                </div>
+                <div class="logs" ref="logBox">
+                    <div v-for="(l, i) in filteredLogs" :key="i" :class="'l-' + l.level">
+                        <span class="hint">{{ datetime(l.ts) }}</span> [{{ l.level.toUpperCase() }}] {{ l.message }}
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================================================= settings -->
+            <section v-show="page === 'settings'">
+                <h1>设置</h1>
+                <div class="tabs">
+                    <a v-for="g in settingGroups" :key="g" :class="{active: settingTab === g}" @click="settingTab = g">{{ g }}</a>
+                </div>
+                <div class="panel form" v-if="settingTab !== 'Cookie'">
+                    <div v-for="spec in specsOf(settingTab)" :key="spec.name" class="field">
+                        <template v-if="spec.kind === 'bool'">
+                            <label class="check"><input type="checkbox" v-model="form.values[spec.name]"> {{ spec.label }}</label>
+                        </template>
+                        <template v-else>
+                            <label>{{ spec.label }}</label>
+                            <select v-if="spec.kind === 'choice'" v-model="form.values[spec.name]">
+                                <option v-for="c in spec.choices" :value="c">{{ c }}</option>
+                            </select>
+                            <div v-else-if="spec.kind === 'multi'" class="multi">
+                                <label v-for="c in spec.choices" class="check">
+                                    <input type="checkbox" :checked="hasChannel(c)" @change="toggleChannel(c, $event.target.checked)"> {{ c }}
+                                </label>
+                            </div>
+                            <input v-else-if="spec.kind === 'int' || spec.kind === 'float'" type="number"
+                                   :step="spec.kind === 'float' ? '0.1' : '1'" v-model.number="form.values[spec.name]">
+                            <input v-else :type="spec.kind === 'password' ? 'password' : 'text'"
+                                   v-model="form.values[spec.name]" :placeholder="spec.help">
+                        </template>
+                        <div class="hint" v-if="spec.help && spec.kind !== 'str' && spec.kind !== 'password'">{{ spec.help }}</div>
+                    </div>
+                </div>
+                <div class="panel form" v-else>
+                    <p class="hint">录制抖音建议填写 Cookie；其他平台一般留空，遇到风控或需要登录时再填写。</p>
+                    <input class="search" v-model="cookieSearch" placeholder="搜索平台">
+                    <div v-for="c in filteredCookieSpecs" :key="c.key" class="field">
+                        <label>{{ c.label }}</label>
+                        <input type="password" v-model="form.cookies[c.key]" @focus="$event.target.type='text'" @blur="$event.target.type='password'">
+                    </div>
+                </div>
+                <div class="toolbar bottom">
+                    <span class="hint">{{ settingsDirty ? '有未保存的修改' : '' }}</span>
+                    <span class="grow"></span>
+                    <button @click="testNotify">发送测试推送</button>
+                    <button @click="resetForm">还原</button>
+                    <button class="primary" @click="saveSettings">保存</button>
+                </div>
+            </section>
+
+            <!-- ================================================= system -->
+            <section v-show="page === 'system'">
+                <h1>环境与关于</h1>
+                <div class="panel">
+                    <dl class="info">
+                        <dt>版本</dt><dd>{{ system.version }}</dd>
+                        <dt>ffmpeg</dt><dd>{{ system.ffmpeg || '未检测到，无法录制' }}</dd>
+                        <dt>Node.js</dt><dd>{{ system.node || '未检测到，抖音等平台签名需要 Node.js' }}</dd>
+                        <dt>全局代理</dt><dd>{{ !system.proxy_checked ? '检测中…' : (system.global_proxy ? '可访问海外网站' : '未检测到（不录制海外平台可忽略）') }}</dd>
+                        <dt>录制目录</dt><dd>{{ system.save_root }}</dd>
+                        <dt>磁盘空间</dt><dd>剩余 {{ system.disk_free_gb }} GB / 共 {{ system.disk_total_gb }} GB <b v-if="system.disk_full" class="rec">（低于阈值，已暂停录制）</b></dd>
+                        <dt>并发检测数</dt><dd>{{ system.max_request }}</dd>
+                        <dt>启动时间</dt><dd>{{ system.started_at ? datetime(system.started_at) : '' }}</dd>
+                    </dl>
+                    <div class="toolbar">
+                        <button @click="loadSystem">刷新</button>
+                        <button @click="proxyCheck">重新检测代理</button>
+                    </div>
+                </div>
+                <div class="panel">
+                    <h3>支持的平台（{{ meta.platforms.length }}）</h3>
+                    <p>{{ meta.platforms.join('、') }}</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- ======================================================== dialogs -->
+    <div class="modal" v-if="roomDialog.show" @click.self="roomDialog.show = false">
+        <form class="dialog" @submit.prevent="saveRoom">
+            <h3>{{ roomDialog.id ? '编辑直播间' : '添加直播间' }}</h3>
+            <label>直播间地址</label>
+            <input v-model="roomDialog.url" placeholder="例如 https://live.douyin.com/745964462470" required>
+            <label>录制画质</label>
+            <select v-model="roomDialog.quality"><option v-for="q in meta.qualities" :value="q">{{ q }}</option></select>
+            <label>主播名称</label>
+            <input v-model="roomDialog.name" placeholder="留空则首次检测时自动获取">
+            <label class="check"><input type="checkbox" v-model="roomDialog.enabled"> 启用监测</label>
+            <div class="toolbar bottom">
+                <span class="grow"></span>
+                <button type="button" @click="roomDialog.show = false">取消</button>
+                <button class="primary" type="submit">确定</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="modal" v-if="importDialog.show" @click.self="importDialog.show = false">
+        <form class="dialog wide" @submit.prevent="importRooms">
+            <h3>批量导入直播间</h3>
+            <p class="hint">每行一个，格式与 URL_config.ini 相同：[画质,]直播间地址[,主播: 名称]，行首加 # 表示暂停。</p>
+            <textarea v-model="importDialog.text" rows="10" placeholder="https://live.douyin.com/745964462470&#10;超清,https://www.huya.com/116,主播: 张三"></textarea>
+            <label>未指定画质时使用</label>
+            <select v-model="importDialog.quality"><option v-for="q in meta.qualities" :value="q">{{ q }}</option></select>
+            <div class="toolbar bottom">
+                <span class="grow"></span>
+                <button type="button" @click="importDialog.show = false">取消</button>
+                <button class="primary" type="submit">导入</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="modal" v-if="preview.show" @click.self="closePreview">
+        <div class="dialog wide">
+            <h3>预览：{{ preview.name }}</h3>
+            <video ref="video" controls autoplay muted class="player"></video>
+            <p class="hint">部分平台的直播源有防盗链或跨域限制，浏览器可能无法直接播放，不影响录制。</p>
+            <input readonly :value="preview.url" @focus="$event.target.select()">
+            <div class="toolbar bottom"><span class="grow"></span><button @click="closePreview">关闭</button></div>
+        </div>
+    </div>
+
+    <div class="toasts">
+        <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">{{ t.text }}</div>
+    </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
