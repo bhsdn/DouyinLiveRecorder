@@ -10,7 +10,8 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 os.environ.setdefault('DLR_SKIP_AUTO_INSTALL', '1')
 
 from recorder_core.common import quality_code  # noqa: E402
@@ -29,7 +30,7 @@ SAMPLES = [
 
 
 def main(urls: list[str]) -> None:
-    paths = AppPaths.default()
+    paths = AppPaths(ROOT)
     settings = ConfigStore(paths.config_file, paths.example_config_file).load()
     for url in urls:
         platform = find_platform(url)
