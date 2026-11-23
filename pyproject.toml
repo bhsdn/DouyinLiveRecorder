@@ -16,6 +16,26 @@ dependencies = [
     "PyExecJS>=1.5.1"
 ]
 
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+web = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+build = ["pyinstaller>=6.0"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["src", "web/static/vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["recorder_core", "gui_desktop", "web", "src", "msg_push", "ffmpeg_install", "i18n"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [project.urls]
 "Homepage" = "https://github.com/ihmily/DouyinLiveRecorder"
 "Documentation" = "https://github.com/ihmily/DouyinLiveRecorder"
