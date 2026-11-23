@@ -288,6 +288,8 @@ https://www.picarto.tv/cuteavalanche
 
 ## 🖥️图形界面与 Web 管理端（二次开发）
 
+完整说明见 [部署文档](docs/部署文档.md) 和 [运行文档](docs/运行文档.md)。
+
 录制逻辑已抽成 `recorder_core/` 引擎，命令行、桌面端、Web 端三者共用，`config/config.ini` 与 `config/URL_config.ini` 格式保持不变，可以随时在三种方式之间切换（同一时间只运行一个）。
 
 | 方式 | 启动 | 额外依赖 |
