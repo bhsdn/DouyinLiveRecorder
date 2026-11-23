@@ -286,6 +286,24 @@ https://www.picarto.tv/cuteavalanche
 
 &emsp;
 
+## 🖥️图形界面与 Web 管理端（二次开发）
+
+录制逻辑已抽成 `recorder_core/` 引擎，命令行、桌面端、Web 端三者共用，`config/config.ini` 与 `config/URL_config.ini` 格式保持不变，可以随时在三种方式之间切换（同一时间只运行一个）。
+
+| 方式 | 启动 | 额外依赖 |
+|---|---|---|
+| 命令行（原有方式） | `python main.py` | 无 |
+| 桌面端（PySide6） | `python gui.py` | `pip install -r requirements-gui.txt` |
+| Web 管理端 | `python web_server.py` 后打开 http://127.0.0.1:8686 | `pip install -r requirements-web.txt` |
+
+- 桌面端：直播间增删改/批量导入/暂停/立即检测/停止本场录制、设置页（含推送测试和 Cookie）、录制文件管理、实时日志、系统托盘与开播/录完通知。
+- Web 端：功能与桌面端相同，额外支持浏览器内预览直播源。默认只监听本机；在 `config.ini` 的 `[Web]` 段把监听地址改为 `0.0.0.0` 时必须设置访问密码，也可用 `--host/--port/--password` 或环境变量 `DLR_WEB_HOST/DLR_WEB_PORT/DLR_WEB_PASSWORD` 覆盖。
+- Docker：设置环境变量 `MODE=web` 和 `DLR_WEB_PASSWORD` 并映射 `8686` 端口即可使用 Web 管理端，见 `docker-compose.yaml` 中的注释。
+- 打包桌面端：`pip install pyinstaller` 后执行 `python packaging/build_desktop.py`，产物在 `dist/DouyinLiveRecorderGUI/`。
+- 开发：`pip install pytest ruff` 后执行 `pytest` 和 `ruff check recorder_core gui_desktop web tests`。首次运行时如果没有 `config/config.ini`，会从 `config/config.ini.example` 自动生成。
+
+&emsp;
+
 ## 🎃源码运行
 使用源码运行，可参考下面的步骤。
 

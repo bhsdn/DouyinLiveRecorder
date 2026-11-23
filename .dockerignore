@@ -4,3 +4,14 @@
 .dockerignore
 README.md
 LICENSE
+.venv
+build
+dist
+tests
+packaging
+downloads
+logs
+backup_config
+config/config.ini
+config/URL_config.ini
+config/.desktop_gui.lock

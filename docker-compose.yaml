@@ -5,6 +5,11 @@ services:
     image: ihmily/douyin-live-recorder:latest
     environment:
       - TERM=xterm-256color
+      # 使用 Web 管理端：取消下面两行注释并修改密码，同时取消 ports 的注释
+      # - MODE=web
+      # - DLR_WEB_PASSWORD=change_me
+    # ports:
+    #   - "8686:8686"
     tty: true
     stdin_open: true
     #build: .
