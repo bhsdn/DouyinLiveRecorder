@@ -7,6 +7,7 @@ import string
 from pathlib import Path
 import functools
 import hashlib
+import inspect
 import re
 import traceback
 from typing import Any
@@ -35,17 +36,33 @@ class Color:
         print(f"{color}{text}{Color.RESET}")
 
 
+def _log_traced_error(func: callable, e: Exception) -> None:
+    if isinstance(e, execjs.ProgramError):
+        logger.warning('Failed to execute JS code. Please check if the Node.js environment')
+        return
+    error_line = traceback.extract_tb(e.__traceback__)[-1].lineno
+    error_info = f"message: type: {type(e).__name__}, {str(e)} in function {func.__name__} at line: {error_line}"
+    logger.error(error_info)
+
+
 def trace_error_decorator(func: callable) -> callable:
+    if inspect.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args: list, **kwargs: dict) -> Any:
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                _log_traced_error(func, e)
+                return {}
+
+        return async_wrapper
+
     @functools.wraps(func)
     def wrapper(*args: list, **kwargs: dict) -> Any:
         try:
             return func(*args, **kwargs)
-        except execjs.ProgramError:
-            logger.warning('Failed to execute JS code. Please check if the Node.js environment')
         except Exception as e:
-            error_line = traceback.extract_tb(e.__traceback__)[-1].lineno
-            error_info = f"message: type: {type(e).__name__}, {str(e)} in function {func.__name__} at line: {error_line}"
-            logger.error(error_info)
+            _log_traced_error(func, e)
             return []
 
     return wrapper
