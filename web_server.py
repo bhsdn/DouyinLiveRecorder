@@ -31,10 +31,11 @@ def main() -> int:
     import uvicorn
 
     from ffmpeg_install import check_ffmpeg_installed
-    from recorder_core.engine import RecorderEngine
+    from recorder_core.engine import RecorderEngine, ensure_tool_paths
     from src.initializer import check_node
     from web.server import create_app, is_loopback
 
+    ensure_tool_paths()
     engine = RecorderEngine()
     host = args.host or engine.settings.web_host or '127.0.0.1'
     port = args.port or int(engine.settings.web_port or 8686)

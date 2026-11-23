@@ -23,6 +23,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / 'dist' / 'DouyinLiveRecorder'
 EXTRA_FILES = ('StopRecording.vbs', 'index.html', 'LICENSE')
+# Created by running the packaged programs; PyInstaller wipes DIST, so these are moved aside and restored.
+USER_DATA = ('config/config.ini', 'config/URL_config.ini', 'downloads', 'logs', 'backup_config')
+
+
+def stash_user_data(stash: Path) -> list[str]:
+    moved = []
+    for rel in USER_DATA:
+        source = DIST / rel
+        if source.exists():
+            target = stash / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(target))
+            moved.append(rel)
+    return moved
+
+
+def restore_user_data(stash: Path, moved: list[str]) -> None:
+    for rel in moved:
+        target = DIST / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            shutil.rmtree(target) if target.is_dir() else target.unlink()
+        shutil.move(str(stash / rel), str(target))
+    shutil.rmtree(stash, ignore_errors=True)
 
 
 def copy_tool_folder(name: str) -> None:
@@ -46,8 +70,15 @@ def main() -> int:
         '--distpath', str(ROOT / 'dist'),
         '--workpath', str(ROOT / 'build' / 'all'),
     ]
-    print(' '.join(command))
-    result = subprocess.run(command, cwd=ROOT)
+    stash = ROOT / 'build' / 'user_data_backup'
+    moved = stash_user_data(stash)
+    if moved:
+        print(f'已暂存打包目录中的用户数据: {", ".join(moved)}')
+    try:
+        print(' '.join(command))
+        result = subprocess.run(command, cwd=ROOT)
+    finally:
+        restore_user_data(stash, moved)
     if result.returncode != 0:
         return result.returncode
 

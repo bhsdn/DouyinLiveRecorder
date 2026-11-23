@@ -71,11 +71,17 @@ def ensure_tool_paths() -> None:
 
 def tool_version(command: list[str]) -> str | None:
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
-        if result.returncode == 0:
-            return (result.stdout or result.stderr).splitlines()[0].strip()
-    except (OSError, subprocess.SubprocessError, IndexError):
-        pass
+        result = subprocess.run(
+            command, capture_output=True, text=True, errors='replace', timeout=15,
+            stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        output = (result.stdout or result.stderr).strip()
+        if result.returncode == 0 and output:
+            return output.splitlines()[0].strip()
+        logger.warning(f"{command[0]} 检测失败: 返回码 {result.returncode}, 输出: {output[:300]!r}")
+    except FileNotFoundError:
+        logger.warning(f"{command[0]} 检测失败: 在 PATH 中找不到 {command[0]}")
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning(f"{command[0]} 检测失败: {type(e).__name__}: {e}")
     return None
 
 

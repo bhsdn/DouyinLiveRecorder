@@ -24,7 +24,7 @@ from pathlib import Path
 from ffmpeg_install import check_ffmpeg
 from recorder_core import VERSION
 from recorder_core.common import TEXT_ENCODING
-from recorder_core.engine import RecorderEngine
+from recorder_core.engine import RecorderEngine, ensure_tool_paths
 from recorder_core.events import Event
 from recorder_core.paths import AppPaths
 from recorder_core.worker import RoomState
@@ -159,6 +159,7 @@ def _raise_system_exit(_signal, _frame):
 def main() -> None:
     paths = AppPaths.default()
     print_banner()
+    ensure_tool_paths()
     if not check_ffmpeg_existence():
         logger.error("缺少ffmpeg无法进行录制，程序退出")
         sys.exit(1)
