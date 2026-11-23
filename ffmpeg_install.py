@@ -44,7 +44,11 @@ def get_lanzou_download_link(url: str, password: str | None = None) -> str | Non
                           'Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0',
         }
         response = requests.get(url, headers=headers)
-        sign = re.search("var skdklds = '(.*?)';", response.text).group(1)
+        match = re.search("var skdklds = '(.*?)';", response.text)
+        if not match:
+            logger.warning("Failed to parse the lanzou share page, trying other download sources")
+            return None
+        sign = match.group(1)
         data = {
             'action': 'downprocess',
             'sign': sign,
@@ -60,41 +64,89 @@ def get_lanzou_download_link(url: str, password: str | None = None) -> str | Non
         logger.error(f"Failed to obtain ffmpeg download address. {e}")
 
 
-def install_ffmpeg_windows():
+# Tried in order after the lanzou mirror; both publish Windows builds whose zip contains */bin/ffmpeg.exe.
+WINDOWS_FFMPEG_SOURCES = (
+    ('GitHub BtbN', 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/'
+                    'ffmpeg-master-latest-win64-gpl.zip'),
+    ('gyan.dev', 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'),
+)
+
+
+def download_file(url: str, save_path: str | Path, desc: str) -> None:
+    save_path = Path(save_path)
+    tmp_path = save_path.with_suffix(save_path.suffix + '.part')
+    with requests.get(url, stream=True, timeout=30) as response:
+        response.raise_for_status()
+        total_size = int(response.headers.get('Content-Length', 0))
+        with tqdm(total=total_size, unit="B", unit_scale=True, ncols=100, desc=desc) as t:
+            with open(tmp_path, 'wb') as f:
+                for data in response.iter_content(1024 * 256):
+                    t.update(len(data))
+                    f.write(data)
+    os.replace(tmp_path, save_path)
+
+
+def extract_ffmpeg_binaries(zip_path: str | Path, target_dir: str | Path) -> bool:
+    """Copy ffmpeg.exe / ffprobe.exe from a build zip into target_dir, ignoring the zip's folder layout."""
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as zf:
+        for member in zf.namelist():
+            name = member.rsplit('/', 1)[-1].lower()
+            if name in ('ffmpeg.exe', 'ffprobe.exe'):
+                with zf.open(member) as src, open(target_dir / name, 'wb') as dst:
+                    dst.write(src.read())
+    return (target_dir / 'ffmpeg.exe').exists()
+
+
+def ffmpeg_works() -> bool:
+    if ffmpeg_path not in os.environ.get('PATH', '').split(os.pathsep):
+        os.environ['PATH'] = ffmpeg_path + os.pathsep + os.environ.get('PATH', '')
     try:
-        logger.warning("ffmpeg is not installed.")
-        logger.debug("Installing the latest version of ffmpeg for Windows...")
-        ffmpeg_url = get_lanzou_download_link('https://wweb.lanzouv.com/iHAc22ly3r3g', 'eots')
-        if ffmpeg_url:
-            full_file_name = 'ffmpeg_latest_build_20250124.zip'
-            version = 'v20250124'
-            zip_file_path = Path(execute_dir) / full_file_name
-            if Path(zip_file_path).exists():
-                logger.debug("ffmpeg installation file already exists, start install...")
-            else:
-                response = requests.get(ffmpeg_url, stream=True)
-                total_size = int(response.headers.get('Content-Length', 0))
-                block_size = 1024
+        return subprocess.run(["ffmpeg", "-version"], capture_output=True).returncode == 0
+    except OSError:
+        return False
 
-                with tqdm(total=total_size, unit="B", unit_scale=True,
-                          ncols=100, desc=f'Downloading ffmpeg ({version})') as t:
-                    with open(zip_file_path, 'wb') as f:
-                        for data in response.iter_content(block_size):
-                            t.update(len(data))
-                            f.write(data)
 
-            unzip_file(zip_file_path, execute_dir)
-            os.environ['PATH'] = ffmpeg_path + os.pathsep + current_env_path
-            result = subprocess.run(["ffmpeg", "-version"], capture_output=True)
-            if result.returncode == 0:
-                logger.debug('ffmpeg installation was successful')
-            else:
-                logger.error('ffmpeg installation failed. Please manually install ffmpeg by yourself')
+def install_ffmpeg_from_lanzou() -> bool:
+    ffmpeg_url = get_lanzou_download_link('https://wweb.lanzouv.com/iHAc22ly3r3g', 'eots')
+    if not ffmpeg_url:
+        return False
+    zip_file_path = Path(execute_dir) / 'ffmpeg_latest_build_20250124.zip'
+    if zip_file_path.exists():
+        logger.debug("ffmpeg installation file already exists, start install...")
+    else:
+        download_file(ffmpeg_url, zip_file_path, 'Downloading ffmpeg (v20250124)')
+    unzip_file(zip_file_path, execute_dir)
+    return ffmpeg_works()
+
+
+def install_ffmpeg_windows() -> bool:
+    logger.warning("ffmpeg is not installed.")
+    logger.debug("Installing the latest version of ffmpeg for Windows...")
+    try:
+        if install_ffmpeg_from_lanzou():
+            logger.debug('ffmpeg installation was successful')
             return True
-        else:
-            logger.error("Please manually install ffmpeg by yourself")
     except Exception as e:
-        logger.error(f"type: {type(e).__name__}, ffmpeg installation failed {e}")
+        logger.warning(f"Download from lanzou failed: {type(e).__name__}: {e}")
+
+    for name, url in WINDOWS_FFMPEG_SOURCES:
+        zip_file_path = Path(execute_dir) / 'ffmpeg_download.zip'
+        try:
+            logger.debug(f"Downloading ffmpeg from {name}: {url}")
+            download_file(url, zip_file_path, f'Downloading ffmpeg ({name})')
+            if extract_ffmpeg_binaries(zip_file_path, ffmpeg_path) and ffmpeg_works():
+                logger.debug(f'ffmpeg installation was successful ({name})')
+                return True
+            logger.warning(f"ffmpeg from {name} could not be started")
+        except Exception as e:
+            logger.warning(f"Download from {name} failed: {type(e).__name__}: {e}")
+        finally:
+            zip_file_path.unlink(missing_ok=True)
+
+    logger.error("ffmpeg installation failed. Please manually install ffmpeg by yourself")
+    return False
 
 
 def install_ffmpeg_mac():
